@@ -1,4 +1,3 @@
-
 const { app, BrowserWindow, dialog } = require("electron");
 const path = require("path");
 const http = require("http");
