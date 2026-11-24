@@ -1,20 +1,74 @@
+
 const { app, BrowserWindow, dialog } = require("electron");
-const { fork } = require("child_process");
 const path = require("path");
 const http = require("http");
-let serverProcess;
+
 const PORT = 3187;
-function waitForServer(resolve, attempts=50) {
-  const req=http.get(`http://127.0.0.1:${PORT}`,res=>{res.resume();resolve();});
-  req.on("error",()=>{if(attempts<=0)return dialog.showErrorBox("ABYSS","Не удалось запустить игровой сервер.");setTimeout(()=>waitForServer(resolve,attempts-1),200);});
+let serverLoaded = false;
+
+function waitForServer(attempts = 50) {
+  return new Promise((resolve, reject) => {
+    function check(remaining) {
+      const req = http.get(`http://127.0.0.1:${PORT}`, (res) => {
+        res.resume();
+        resolve();
+      });
+
+      req.on("error", () => {
+        if (remaining <= 0) {
+          reject(new Error("Не удалось запустить игровой сервер."));
+          return;
+        }
+
+        setTimeout(() => check(remaining - 1), 200);
+      });
+    }
+
+    check(attempts);
+  });
 }
-async function createWindow(){
-  serverProcess=fork(path.join(__dirname,"..","server.js"),[],{cwd:path.join(__dirname,".."),env:{...process.env,PORT:String(PORT),ELECTRON_RUN_AS_NODE:"1"},stdio:"ignore"});
-  await new Promise(resolve=>waitForServer(resolve));
-  const win=new BrowserWindow({width:1280,height:850,minWidth:900,minHeight:650,backgroundColor:"#07131e",title:"ABYSS — Axolotl Club",autoHideMenuBar:true,webPreferences:{contextIsolation:true,nodeIntegration:false}});
-  win.loadURL(`http://127.0.0.1:${PORT}`);
-  win.on("closed",()=>{});
+
+async function createWindow() {
+  try {
+    if (!serverLoaded) {
+      process.env.PORT = String(PORT);
+
+      require(path.join(__dirname, "..", "server.js"));
+
+      serverLoaded = true;
+    }
+
+    await waitForServer();
+
+    const win = new BrowserWindow({
+      width: 1280,
+      height: 850,
+      minWidth: 900,
+      minHeight: 650,
+      backgroundColor: "#07131e",
+      title: "ABYSS — Axolotl Club",
+      autoHideMenuBar: true,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
+
+    win.loadURL(`http://127.0.0.1:${PORT}`);
+  } catch (error) {
+    dialog.showErrorBox(
+      "ABYSS — ошибка запуска",
+      error.stack || error.message
+    );
+
+    app.quit();
+  }
 }
+
 app.whenReady().then(createWindow);
-app.on("window-all-closed",()=>{if(serverProcess)serverProcess.kill();if(process.platform!=="darwin")app.quit();});
-app.on("before-quit",()=>{if(serverProcess)serverProcess.kill();});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
